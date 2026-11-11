@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Перекладач сленгу</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  body { background:#0f172a; color:#f8fafc; font-family:sans-serif; padding:20px; margin:0;
+         display:flex; justify-content:center; min-height:100vh; box-sizing:border-box; }
+  .card { background:#1e293b; padding:25px; border-radius:16px; width:100%; max-width:350px;
+          border:2px solid #00ffcc; text-align:center; box-shadow:0 10px 25px rgba(0,255,204,.1); align-self:flex-start; }
+  h2 { color:#00ffcc; font-size:20px; margin:0 0 5px; }
+  .sub { color:#94a3b8; font-size:12px; margin-bottom:20px; }
+  select, input, button { width:100%; box-sizing:border-box; padding:12px; border-radius:8px; border:none;
+          font-size:16px; margin-bottom:12px; outline:none; }
+  select, input { background:#334155; color:#fff; }
+  button { background:#00ffcc; color:#0f172a; font-weight:bold; cursor:pointer; }
+  button.alt { background:#334155; color:#00ffcc; }
+  .result { background:#0f172a; padding:15px; border-radius:8px; color:#38bdf8; min-height:40px;
+            font-style:italic; border:1px dashed #334155; margin-bottom:15px; }
+  details { text-align:left; margin-top:10px; color:#94a3b8; font-size:14px; }
+  summary { cursor:pointer; color:#00ffcc; margin-bottom:10px; }
+  #qr { background:#fff; padding:10px; border-radius:8px; display:none; margin:15px auto 0; width:fit-content; }
+  .footer { margin-top:15px; font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:1px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h2>Перекладач сленгу</h2>
+  <div class="sub">Модуль взаєморозуміння v1.1</div>
+
+  <select id="mode"></select>
+  <select id="sel"></select>
+  <button id="go">ПЕРЕКЛАСТИ</button>
+  <div class="result" id="out">Обери фразу вище 👆</div>
+
+  <details>
+    <summary>+ Додай свою фразу</summary>
+    <input id="src" placeholder="Що кажуть («Я на 5 хвилин»)" maxlength="80">
+    <input id="dst" placeholder="Що це насправді означає" maxlength="120">
+    <button class="alt" id="add">Додати</button>
+  </details>
+
+  <button id="share">Створити QR з моїми фразами</button>
+  <div id="qr"></div>
+  <div class="footer">Powered by Robocode OS</div>
+</div>
+
+<script>
+// Режими. Ключ (parents, school, cat) іде в посилання, тому не змінюйте його після запуску.
+const modes = {
+  parents: { title: "Батьки ⇄ Підлітки", phrases: [
+    ["«Я просто подивлюся TikTok 5 хвилин»", "«Я оптимізую нейронні зв'язки та втрачаю зв'язок із реальністю на наступні 3 години»."],
+    ["«Мені потрібен донат на новий скін у грі»", "«Інвестиції в моє стратегічне мислення та соціальний статус у класі»."],
+    ["«Ти знову завис у своєму телефоні!»", "«Я тестую нові алгоритми обробки інформації та треную швидкість реакції»."],
+    ["«Іди негайно прибери в кімнаті!»", "«Терміново запусти протокол прибирання, поки система не дала збій!»"]
+  ]},
+  school: { title: "Вчителі ⇄ Учні", phrases: [
+    ["«Я забув зошит удома»", "«Артефакт загублено під час місії»."],
+    ["«Дістаньте щоденники»", "«Починається перевірка системи»."],
+    ["«Можна вийти?»", "«Потрібна перезагрузка, ненадовго відключаюсь»."]
+  ]},
+  cat: { title: "Кіт ⇄ Людина", phrases: [
+    ["«Мяу!» (о 5-й ранку)", "«Мої миски порожні, а це критичний збій!»"],
+    ["Кіт скидає чашку зі столу", "«Тестую закони гравітації. Результат: працюють»."],
+    ["Кіт сидить на клавіатурі", "«Я тут головний адміністратор, твоя робота почекає»."]
+  ]}
+};
+
+const params = new URLSearchParams(location.search);
+let modeKey = params.get("m");
+if (!modes[modeKey]) modeKey = "parents";
+
+// Власні фрази з URL (?p=...), JSON, для поточного режиму
+let custom = [];
+try {
+  const raw = params.get("p");
+  if (raw) {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      custom = parsed
+        .filter(x => Array.isArray(x) && typeof x[0] === "string" && typeof x[1] === "string")
+        .map(x => [x[0].slice(0, 80), x[1].slice(0, 120)])
+        .slice(0, 10);
+    }
+  }
+} catch (e) { custom = []; }
+
+const modeSel = document.getElementById("mode");
+const sel = document.getElementById("sel");
+const out = document.getElementById("out");
+
+function all() { return modes[modeKey].phrases.concat(custom); }
+
+function renderModes() {
+  Object.keys(modes).forEach(k => {
+    const o = document.createElement("option");
+    o.value = k;
+    o.textContent = modes[k].title;
+    modeSel.append(o);
+  });
+  modeSel.value = modeKey;
+}
+
+function render() {
+  sel.innerHTML = "";
+  all().forEach((pair, i) => {
+    const o = document.createElement("option");
+    o.value = i;
+    o.textContent = pair[0];
+    sel.append(o);
+  });
+}
+
+// Короткий «роботизований» звук лише після дотику користувача
+function beep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "square";
+    osc.frequency.value = 440;
+    gain.gain.value = 0.05;
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start();
+    osc.frequency.setValueAtTime(660, ctx.currentTime + 0.08);
+    osc.stop(ctx.currentTime + 0.16);
+  } catch (e) {}
+}
+
+modeSel.onchange = () => {
+  modeKey = modeSel.value;
+  custom = [];                 // власні фрази належать режиму, з якого їх створили
+  out.textContent = "Обери фразу вище 👆";
+  render();
+};
+
+document.getElementById("go").onclick = () => {
+  beep();
+  out.textContent = all()[sel.value][1];
+};
+
+document.getElementById("add").onclick = () => {
+  const s = document.getElementById("src").value.trim();
+  const d = document.getElementById("dst").value.trim();
+  if (!s || !d || custom.length >= 10) return;
+  custom.push([s, d]);
+  document.getElementById("src").value = "";
+  document.getElementById("dst").value = "";
+  render();
+  sel.value = all().length - 1;
+  out.textContent = d;
+};
+
+document.getElementById("share").onclick = () => {
+  const u = new URL(location.href.split("?")[0]);
+  u.searchParams.set("m", modeKey);
+  if (custom.length) u.searchParams.set("p", JSON.stringify(custom));
+  const qr = document.getElementById("qr");
+  qr.innerHTML = "";
+  qr.style.display = "block";
+  new QRCode(qr, { text: u.toString(), width: 200, height: 200, correctLevel: QRCode.CorrectLevel.L });
+};
+
+renderModes();
+render();
+</script>
+</body>
+</html>
